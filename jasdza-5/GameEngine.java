@@ -120,4 +120,8 @@ public class GameEngine {
         judgeIndex = (judgeIndex + 1) % players.size();
         return true; // Continue game
     }
+
+    public int getJudgeIndex() {
+        return judgeIndex;
+    }
 }
