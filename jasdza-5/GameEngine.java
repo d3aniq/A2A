@@ -3,50 +3,40 @@ import java.util.concurrent.*;
 
 public class GameEngine {
     private List<IPlayer> players;
-    private List<String> redApplesDeck;
-    private List<String> greenApplesDeck;
+    private IDeckManager deckManager; // Refactored: Use Interface for Testability
     private WinningStrategy winningStrategy;
     private int judgeIndex = 0;
-    private boolean isRunning = true;
     private ExecutorService threadPool;
 
-    public GameEngine(List<IPlayer> players, List<String> redApples, List<String> greenApples, WinningStrategy strategy) {
+    // Refactored: Constructor now accepts IDeckManager instead of raw Lists
+    public GameEngine(List<IPlayer> players, IDeckManager deckManager, WinningStrategy strategy) {
         this.players = players;
-        this.redApplesDeck = new ArrayList<>(redApples);
-        this.greenApplesDeck = new ArrayList<>(greenApples);
+        this.deckManager = deckManager;
         this.winningStrategy = strategy;
         this.threadPool = Executors.newFixedThreadPool(Math.max(1, players.size()));
-        
-        Collections.shuffle(this.redApplesDeck);
-        Collections.shuffle(this.greenApplesDeck);
     }
 
     public void startGame() {
-        // Deal initial hands (7 cards)
-        for (IPlayer p : players) {
-            List<String> hand = new ArrayList<>();
-            for (int i = 0; i < 7; i++) {
-                if (!redApplesDeck.isEmpty()) hand.add(redApplesDeck.remove(0));
-            }
-            p.receiveHand(hand);
-        }
+        // Delegate dealing to the manager
+        deckManager.dealInitialHands(players);
 
         judgeIndex = new Random().nextInt(players.size());
 
-        while (isRunning) {
-            playRound();
+        boolean gameRunning = true;
+        while (gameRunning) {
+            gameRunning = playRound();
         }
         threadPool.shutdown();
     }
 
-    private void playRound() {
-        if (greenApplesDeck.isEmpty()) {
+    // Refactored: Returns boolean so we can unit test one round at a time
+    public boolean playRound() {
+        if (!deckManager.hasGreenApples()) {
             System.out.println("Out of green apples!");
-            isRunning = false; 
-            return;
+            return false; // Stop game
         }
 
-        String currentGreenApple = greenApplesDeck.remove(0);
+        String currentGreenApple = deckManager.drawGreenApple();
         IPlayer judge = players.get(judgeIndex);
         
         // 1. Notify start of round
@@ -62,57 +52,72 @@ public class GameEngine {
             }
         }
 
-        List<String> playedCards = new ArrayList<>();
-        Map<String, IPlayer> cardOwnerMap = new HashMap<>();
+        // FIX: Use List<PlayedCard> instead of Map to allow duplicate words from different players
+        List<PlayedCard> playedCards = new ArrayList<>();
 
         for (Map.Entry<IPlayer, Future<String>> entry : submissions.entrySet()) {
             try {
-                String card = entry.getValue().get(); // Waits for player response
-                if (card != null && !card.isEmpty()) {
-                    playedCards.add(card);
-                    cardOwnerMap.put(card, entry.getKey());
+                String cardText = entry.getValue().get(); // Waits for player response
+                if (cardText != null && !cardText.isEmpty()) {
+                    playedCards.add(new PlayedCard(cardText, entry.getKey()));
                 }
             } catch (Exception e) { e.printStackTrace(); }
         }
 
         Collections.shuffle(playedCards);
 
-        // 3. Show played apples to everyone
-        for (IPlayer p : players) {
-            p.notifyPlayedApples(playedCards);
+        // Create a list of strings for the players/judge to see
+        List<String> playedStrings = new ArrayList<>();
+        for (PlayedCard pc : playedCards) {
+            playedStrings.add(pc.cardText);
         }
 
-        // 4. Judge picks a winner
-        String winningCard = judge.judge(currentGreenApple, playedCards);
-        IPlayer winner = cardOwnerMap.get(winningCard);
+        // 3. Show played apples to everyone
+        for (IPlayer p : players) {
+            p.notifyPlayedApples(playedStrings);
+        }
+
+        // 4. Judge picks a winner (Judge sees strings, returns a string)
+        String winningString = judge.judge(currentGreenApple, playedStrings);
         
-        if (winner != null) {
+        // Match the winning string back to the Player owner
+        PlayedCard winningCard = null;
+        for (PlayedCard pc : playedCards) {
+            if (pc.cardText.equals(winningString)) {
+                winningCard = pc;
+                break; // The first match wins (list was already shuffled)
+            }
+        }
+        
+        if (winningCard != null) {
+            IPlayer winner = winningCard.owner;
             winner.addPoint(currentGreenApple);
-            String winMsg = (winner.isBot() ? "Bot " : "Player ") + "ID" + winner.getId() + " won with: " + winningCard;
+            
+            String winMsg = (winner.isBot() ? "Bot " : "Player ") + "ID" + winner.getId() + " won with: " + winningCard.cardText;
             System.out.println(winMsg); // Log to server console
             
             for (IPlayer p : players) {
-                p.notifyRoundResults(winningCard, winMsg);
+                p.notifyRoundResults(winningCard.cardText, winMsg);
             }
             
-            // 5. Check Win Condition (Fixing Rule 15)
+            // 5. Check Win Condition
             if (winningStrategy.hasWon(players.size(), winner.getScore())) {
                 String gameWinMsg = (winner.isBot() ? "Bot " : "Player ") + "ID" + winner.getId() + " won the game";
                 for (IPlayer p : players) p.notifyGameEnd(gameWinMsg);
                 System.out.println(gameWinMsg);
-                isRunning = false;
-                return;
+                return false; // Stop game
             }
         }
 
         // 6. Replenish hands
         for (IPlayer p : players) {
-            if (p != judge && !redApplesDeck.isEmpty()) {
-                p.receiveNewCard(redApplesDeck.remove(0));
+            if (p != judge && deckManager.hasRedApples()) {
+                p.receiveNewCard(deckManager.drawRedApple());
             }
         }
 
         // 7. Rotate Judge
         judgeIndex = (judgeIndex + 1) % players.size();
+        return true; // Continue game
     }
 }
