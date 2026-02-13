@@ -39,7 +39,7 @@ public class Apples2Apples {
                 }
             }
 
-            // 2. Fill remaining slots with Bots (Game requires min 4 players usually)
+            // 2. Fill remaining slots with Bots
             int currentId = players.size();
             while (players.size() < 4) {
                 players.add(new BotPlayer(currentId++));
@@ -48,10 +48,11 @@ public class Apples2Apples {
             // 3. Start Game
             System.out.println("Starting Game with " + players.size() + " players.");
             
+            IDeckManager deckManager = new DeckManager(redApples, greenApples);
+
             GameEngine engine = new GameEngine(
                 players, 
-                redApples, 
-                greenApples, 
+                deckManager, // Pass the manager, not the raw lists
                 new StandardRulesWinningStrategy()
             );
             engine.startGame();
