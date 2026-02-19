@@ -4,6 +4,7 @@ import static org.junit.Assert.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Executors;
 
 public class Apples2ApplesTest {
 
@@ -37,7 +38,7 @@ public class Apples2ApplesTest {
         // 1. Arrange: Create Mock Objects
         List<IPlayer> mockPlayers = new ArrayList<>();
         // Add 4 BotPlayers for simplicity
-        for(int i=0; i<4; i++) mockPlayers.add(new BotPlayer(i));
+        for(int i = 0; i < 4; i++) mockPlayers.add(new BotPlayer(i));
 
         // Create a deterministic DeckManager for testing
         IDeckManager testDeck = new DeckManager(
@@ -47,8 +48,21 @@ public class Apples2ApplesTest {
     
         WinningStrategy strategy = new StandardRulesWinningStrategy();
 
+        GameContext context = new GameContext(
+            mockPlayers, 
+            testDeck, 
+            strategy, 
+            Executors.newFixedThreadPool(1) // En tråd räcker för ett test
+        );
+
+        List<IGamePhase> phases = new ArrayList<>();
+        phases.add(new DrawPhase());
+        phases.add(new PlayCardsPhase());
+        phases.add(new StandardJudgingPhase());
+        phases.add(new ReplenishPhase());
+
         // 2. Inject dependencies
-        GameEngine engine = new GameEngine(mockPlayers, testDeck, strategy);
+        GameEngine engine = new GameEngine(context, phases);
 
         // 3. Act: Play ONE round
         boolean result = engine.playRound();
