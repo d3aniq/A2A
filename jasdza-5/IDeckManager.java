@@ -1,3 +1,5 @@
+import java.util.List;
+
 public interface IDeckManager {
     String drawRedApple();
     String drawGreenApple();
