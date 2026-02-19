@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
 
 public class Apples2Apples {
     public static void main(String[] args) {
@@ -50,11 +51,21 @@ public class Apples2Apples {
             
             IDeckManager deckManager = new DeckManager(redApples, greenApples);
 
-            GameEngine engine = new GameEngine(
+            GameContext context = new GameContext(
                 players, 
-                deckManager, // Pass the manager, not the raw lists
-                new StandardRulesWinningStrategy()
+                deckManager, 
+                new StandardRulesWinningStrategy(),
+                Executors.newFixedThreadPool(Math.max(1, players.size()))
             );
+
+            List<IGamePhase> phases = new ArrayList<>();
+            phases.add(new DrawPhase());
+            phases.add(new PlayCardsPhase());
+            phases.add(new StandardJudgingPhase()); 
+            // phases.add(new BadHarvestPhase());
+            phases.add(new ReplenishPhase());
+
+            GameEngine engine = new GameEngine(context, phases);
             engine.startGame();
 
         } catch (IOException e) {
